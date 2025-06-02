@@ -1,104 +1,191 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>DNA Center Topology Visualization</title>
-    <script src="https://d3js.org/d3.v7.min.js"></script>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        .node { fill: steelblue; stroke: white; stroke-width: 1.5px; }
-        .link { stroke: gray; stroke-opacity: 0.6; stroke-width: 1.5px; }
-    </style>
+  <meta charset="UTF-8">
+  <title>DNA Center Topology Visualization</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      display: flex;
+    }
+
+    svg {
+      flex: 1;
+      background-color: #f9f9f9;
+    }
+
+    #info-panel {
+      width: 300px;
+      padding: 16px;
+      background: #f1f1f1;
+      border-left: 1px solid #ccc;
+      display: none;
+      overflow-y: auto;
+    }
+
+    .node circle {
+      fill: #0078D7;
+      stroke: #fff;
+      stroke-width: 2px;
+      cursor: pointer;
+      filter: drop-shadow(1px 1px 2px rgba(0, 0, 0, 0.2));
+    }
+
+    .link {
+      stroke: #666;
+      stroke-opacity: 0.6;
+      stroke-width: 2px;
+      cursor: pointer;
+    }
+
+    .node-label, .link-label {
+      font: 12px sans-serif;
+      fill: #333;
+      pointer-events: none;
+    }
+  </style>
 </head>
 <body>
-    <h2>DNA Center Network Topology</h2>
-    <svg width="1000" height="800"></svg>
-    <script>
-        d3.json("/topology").then(function(data) {
-            console.log(data.response.nodes)
-            if (data.error) {
-                alert("Błąd pobierania danych: " + data.error);
-                return;
-            }
-            const nodes = data.response.nodes.map(node => ({
-                id: node.id,
-                label: node.label
-            }));
-            const links = data.response.links.map(link => ({
-                source: link.source,
-                target: link.target
-            }));
+  <svg width="1000" height="800"></svg>
+  <div id="info-panel">
+    <h3>Szczegóły</h3>
+    <div id="device-info">Kliknij w węzeł lub połączenie</div>
+  </div>
 
-            const svg = d3.select("svg");
-            const width = +svg.attr("width");
-            const height = +svg.attr("height");
+  <script>
+    d3.json("/topology").then(function(data) {
+      if (data.error) {
+        alert("Błąd pobierania danych: " + data.error);
+        return;
+      }
 
-            const simulation = d3.forceSimulation(nodes)
-                .force("link", d3.forceLink(links).id(d => d.id).distance(100))
-                .force("charge", d3.forceManyBody().strength(-300))
-                .force("center", d3.forceCenter(width / 2, height / 2));
+      const nodes = data.response.nodes.map(node => ({
+        id: node.id,
+        label: node.label,
+        ...node
+      }));
 
-            const link = svg.append("g")
-                .attr("class", "links")
-                .selectAll("line")
-                .data(links)
-                .enter().append("line")
-                .attr("class", "link");
+      const links = data.response.links.map(link => ({
+        source: link.source,
+        target: link.target,
+        startPortName: link.startPortName,
+        endPortName: link.endPortName,
+        linkStatus: link.linkStatus,
+        linkType: link.linkType,
+        label: `${link.startPortName} <-> ${link.endPortName}`
+      }));
 
-            const node = svg.append("g")
-                .attr("class", "nodes")
-                .selectAll("circle")
-                .data(nodes)
-                .enter().append("circle")
-                .attr("class", "node")
-                .attr("r", 10)
-                .call(d3.drag()
-                    .on("start", dragstarted)
-                    .on("drag", dragged)
-                    .on("end", dragended));
+      const svg = d3.select("svg");
+      const width = +svg.attr("width");
+      const height = +svg.attr("height");
 
-            const label = svg.append("g")
-                .selectAll("text")
-                .data(nodes)
-                .enter().append("text")
-                .text(d => d.label)
-                .attr("font-size", "12px")
-                .attr("dx", 12)
-                .attr("dy", ".35em");
+      const simulation = d3.forceSimulation(nodes)
+        .force("link", d3.forceLink(links).id(d => d.id).distance(320))
+        .force("charge", d3.forceManyBody().strength(-400))
+        .force("center", d3.forceCenter(width / 2, height / 2));
 
-            simulation.on("tick", () => {
-                link
-                    .attr("x1", d => d.source.x)
-                    .attr("y1", d => d.source.y)
-                    .attr("x2", d => d.target.x)
-                    .attr("y2", d => d.target.y);
+      const link = svg.append("g")
+        .attr("class", "links")
+        .selectAll("line")
+        .data(links)
+        .enter().append("line")
+        .attr("class", "link")
+        .on("click", showLinkInfo);
 
-                node
-                    .attr("cx", d => d.x)
-                    .attr("cy", d => d.y);
+      const linkLabels = svg.append("g")
+        .attr("class", "link-labels")
+        .selectAll("text")
+        .data(links)
+        .enter().append("text")
+        .attr("class", "link-label")
+        .text(d => d.label);
 
-                label
-                    .attr("x", d => d.x)
-                    .attr("y", d => d.y);
-            });
+      const nodeGroup = svg.append("g")
+        .attr("class", "nodes")
+        .selectAll("g")
+        .data(nodes)
+        .enter().append("g")
+        .on("click", showNodeInfo);
 
-            function dragstarted(event, d) {
-                if (!event.active) simulation.alphaTarget(0.3).restart();
-                d.fx = d.x;
-                d.fy = d.y;
-            }
+      nodeGroup.append("circle")
+        .attr("r", 20);
 
-            function dragged(event, d) {
-                d.fx = event.x;
-                d.fy = event.y;
-            }
+      nodeGroup.append("text")
+        .attr("class", "node-label")
+        .attr("dy", 5)
+        .attr("text-anchor", "middle")
+        .text(d => d.label);
 
-            function dragended(event, d) {
-                if (!event.active) simulation.alphaTarget(0);
-                d.fx = null;
-                d.fy = null;
-            }
-        });
-    </script>
+      simulation.on("tick", () => {
+        link
+          .attr("x1", d => d.source.x)
+          .attr("y1", d => d.source.y)
+          .attr("x2", d => d.target.x)
+          .attr("y2", d => d.target.y);
+
+        linkLabels
+          .attr("x", d => (d.source.x + d.target.x) / 2)
+          .attr("y", d => (d.source.y + d.target.y) / 2);
+
+        nodeGroup.attr("transform", d => `translate(${d.x},${d.y})`);
+      });
+
+      nodeGroup.call(d3.drag()
+        .on("start", dragstarted)
+        .on("drag", dragged)
+        .on("end", dragended));
+
+      function showNodeInfo(event, d) {
+        const panel = document.getElementById("info-panel");
+        const content = document.getElementById("device-info");
+        panel.style.display = "block";
+
+        content.innerHTML = `
+          <strong>Typ obiektu:</strong> Węzeł<br><br>
+          <strong>ID:</strong> ${d.id}<br>
+          <strong>Nazwa:</strong> ${d.label}<br>
+          <strong>Typ:</strong> ${d.deviceType || "Brak"}<br>
+          <strong>Status:</strong> ${d.status || "Nieznany"}<br>
+        `;
+      }
+
+      function showLinkInfo(event, d) {
+        const panel = document.getElementById("info-panel");
+        const content = document.getElementById("device-info");
+        panel.style.display = "block";
+
+        content.innerHTML = `
+          <strong>Typ obiektu:</strong> Połączenie<br><br>
+          <strong>Źródło:</strong> ${d.source.label || d.source.id}<br>
+          <strong>Port źródłowy:</strong> ${d.startPortName}<br>
+          <strong>Cel:</strong> ${d.target.label || d.target.id}<br>
+          <strong>Port docelowy:</strong> ${d.endPortName}<br>
+          <strong>Status:</strong> ${d.linkStatus || "Nieznany"}<br>
+          <strong>Typ połączenia:</strong> ${d.linkType || "Nieznany"}<br>
+        `;
+      }
+
+      function dragstarted(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      }
+
+      function dragged(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+      }
+
+      function dragended(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      }
+    }).catch(err => {
+      console.error("Błąd pobierania /topology", err);
+    });
+  </script>
 </body>
 </html>
