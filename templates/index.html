@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DNA Center Topology Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .node { fill: steelblue; stroke: white; stroke-width: 1.5px; }
+        .link { stroke: gray; stroke-opacity: 0.6; stroke-width: 1.5px; }
+    </style>
+</head>
+<body>
+    <h2>DNA Center Network Topology</h2>
+    <svg width="1000" height="800"></svg>
+    <script>
+        d3.json("/topology").then(function(data) {
+            console.log(data.response.nodes)
+            if (data.error) {
+                alert("Błąd pobierania danych: " + data.error);
+                return;
+            }
+            const nodes = data.response.nodes.map(node => ({
+                id: node.id,
+                label: node.label
+            }));
+            const links = data.response.links.map(link => ({
+                source: link.source,
+                target: link.target
+            }));
+
+            const svg = d3.select("svg");
+            const width = +svg.attr("width");
+            const height = +svg.attr("height");
+
+            const simulation = d3.forceSimulation(nodes)
+                .force("link", d3.forceLink(links).id(d => d.id).distance(100))
+                .force("charge", d3.forceManyBody().strength(-300))
+                .force("center", d3.forceCenter(width / 2, height / 2));
+
+            const link = svg.append("g")
+                .attr("class", "links")
+                .selectAll("line")
+                .data(links)
+                .enter().append("line")
+                .attr("class", "link");
+
+            const node = svg.append("g")
+                .attr("class", "nodes")
+                .selectAll("circle")
+                .data(nodes)
+                .enter().append("circle")
+                .attr("class", "node")
+                .attr("r", 10)
+                .call(d3.drag()
+                    .on("start", dragstarted)
+                    .on("drag", dragged)
+                    .on("end", dragended));
+
+            const label = svg.append("g")
+                .selectAll("text")
+                .data(nodes)
+                .enter().append("text")
+                .text(d => d.label)
+                .attr("font-size", "12px")
+                .attr("dx", 12)
+                .attr("dy", ".35em");
+
+            simulation.on("tick", () => {
+                link
+                    .attr("x1", d => d.source.x)
+                    .attr("y1", d => d.source.y)
+                    .attr("x2", d => d.target.x)
+                    .attr("y2", d => d.target.y);
+
+                node
+                    .attr("cx", d => d.x)
+                    .attr("cy", d => d.y);
+
+                label
+                    .attr("x", d => d.x)
+                    .attr("y", d => d.y);
+            });
+
+            function dragstarted(event, d) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+            }
+
+            function dragged(event, d) {
+                d.fx = event.x;
+                d.fy = event.y;
+            }
+
+            function dragended(event, d) {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+            }
+        });
+    </script>
+</body>
+</html>
